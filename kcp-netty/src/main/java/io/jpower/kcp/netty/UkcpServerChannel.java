@@ -54,12 +54,12 @@ public final class UkcpServerChannel extends AbstractNioMessageChannel implement
     private final ReItrHashMap<SocketAddress, UkcpServerChildChannel> childChannelMap = new ReItrHashMap<>();
 
     private final ReusableIterator<Map.Entry<SocketAddress, UkcpServerChildChannel>> childChannelMapItr =
-            childChannelMap.entrySet().iterator();
+            (ReusableIterator<Map.Entry<SocketAddress, UkcpServerChildChannel>>) childChannelMap.entrySet().iterator();
 
     private final ReItrHashMap<SocketAddress, CloseWaitKcp> closeWaitKcpMap = new ReItrHashMap<>();
 
     private final ReusableIterator<Map.Entry<SocketAddress, CloseWaitKcp>> closeWaitKcpMapItr =
-            closeWaitKcpMap.entrySet().iterator();
+            (ReusableIterator<Map.Entry<SocketAddress, UkcpServerChannel.CloseWaitKcp>>) closeWaitKcpMap.entrySet().iterator();
 
     private final KcpOutput output = new UkcpServerOutput();
 

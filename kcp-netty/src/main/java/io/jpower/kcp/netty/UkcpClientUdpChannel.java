@@ -300,10 +300,14 @@ final class UkcpClientUdpChannel extends AbstractNioMessageChannel {
                     CodecOutputList<ByteBuf> recvBufList = null;
                     boolean recv = false;
                     try {
+						
                         if (mergeSegmentBuf) {
+							
                             ByteBufAllocator allocator = config.getAllocator();
                             int peekSize;
+							
                             while ((peekSize = ukcpChannel.kcpPeekSize()) >= 0) {
+								//System.out.println("fff");
                                 recv = true;
                                 ByteBuf recvBuf = allocator.ioBuffer(peekSize);
                                 ukcpChannel.kcpReceive(recvBuf);
@@ -311,6 +315,7 @@ final class UkcpClientUdpChannel extends AbstractNioMessageChannel {
                                 ukcpPipeline.fireChannelRead(recvBuf);
                             }
                         } else {
+							
                             while (ukcpChannel.kcpCanRecv()) {
                                 recv = true;
                                 if (recvBufList == null) {

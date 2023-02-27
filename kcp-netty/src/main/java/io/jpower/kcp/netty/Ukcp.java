@@ -40,6 +40,14 @@ public class Ukcp {
         this.active = true;
     }
 
+	public void setOnTunnelActiveListener(OnTunnelActiveListener onTunnelActive)
+	{
+		if(kcp==null){
+			throw new RuntimeException("setOnTunnelActiveListener failed,kcp is null");
+		}
+		kcp.setOnTunnelActiveListener(onTunnelActive);
+	}
+
     /**
      * Receives ByteBufs.
      *
@@ -48,6 +56,7 @@ public class Ukcp {
      */
     public void receive(ByteBuf buf) throws IOException {
         int ret = kcp.recv(buf);
+		//System.out.println("ret "+ret);
         switch (ret) {
             case -3:
                 throw new IOException("Received Data exceeds maxCapacity of buf");
@@ -67,6 +76,7 @@ public class Ukcp {
 
     public void input(ByteBuf data) throws IOException {
         int ret = kcp.input(data);
+		//System.out.println(ret);
         switch (ret) {
             case -1:
                 throw new IOException("No enough bytes of head");
@@ -79,6 +89,12 @@ public class Ukcp {
             default:
                 break;
         }
+    }
+	
+	
+	public void sendHandShake(){
+        kcp.sendHandShake();
+       
     }
 
     /**

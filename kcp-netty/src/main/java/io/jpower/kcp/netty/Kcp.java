@@ -13,6 +13,7 @@ import io.netty.util.internal.ObjectPool;
 import io.netty.util.internal.ObjectPool.Handle;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
+import io.netty.buffer.Unpooled;
 
 /**
  * Java implementation of <a href="https://github.com/skywind3000/kcp">KCP</a>
@@ -72,7 +73,7 @@ public class Kcp {
     /**
      * must >= max fragment size
      */
-    public static final int IKCP_WND_RCV = 128;
+    public static final int IKCP_WND_RCV = 512;
 
     public static final int IKCP_MTU_DEF = 1400;
 
@@ -104,6 +105,8 @@ public class Kcp {
     public static final int IKCP_FASTACK_LIMIT = 5;
 
     private int conv;
+	
+	private int token;
 
     private int mtu = IKCP_MTU_DEF;
 
@@ -133,7 +136,7 @@ public class Kcp {
 
     private int sndWnd = IKCP_WND_SND;
 
-    private int rcvWnd = IKCP_WND_RCV;
+    private int rcvWnd = 256;
 
     private int rmtWnd = IKCP_WND_RCV;
 
@@ -198,10 +201,21 @@ public class Kcp {
     /**
      * automatically set conv
      */
-    private boolean autoSetConv;
+    private boolean autoSetConv=true;
 
     private KcpMetric metric = new KcpMetric(this);
 
+	private OnTunnelActiveListener onTunnelActiveListener;
+
+	public void setOnTunnelActiveListener(OnTunnelActiveListener onTunnelActive)
+	{
+		this.onTunnelActiveListener=onTunnelActive;
+	}
+
+	
+
+	
+	
     private static long int2Uint(int i) {
         return i & 0xFFFFFFFFL;
     }
@@ -229,11 +243,15 @@ public class Kcp {
     }
 
     private static int encodeSeg(ByteBuf buf, Segment seg) {
-        int offset = buf.writerIndex();
+       //  new RuntimeException().printStackTrace();
+		int offset = buf.writerIndex();
 
         buf.writeIntLE(seg.conv);
+		buf.writeIntLE(seg.token);
+		
         buf.writeByte(seg.cmd);
         buf.writeByte(seg.frg);
+		
         buf.writeShortLE(seg.wnd);
         buf.writeIntLE(seg.ts);
         buf.writeIntLE((int) seg.sn);
@@ -249,6 +267,8 @@ public class Kcp {
 
         private int conv;
 
+		private int token;
+		
         private byte cmd;
 
         private short frg;
@@ -279,6 +299,7 @@ public class Kcp {
 
         void recycle(boolean releaseBuf) {
             conv = 0;
+			token=0;
             cmd = 0;
             frg = 0;
             wnd = 0;
@@ -355,6 +376,7 @@ public class Kcp {
      * @return
      */
     public int recv(ByteBuf buf) {
+		//System.out.println("rcvQueue.isEmpty()"+rcvQueue.isEmpty());
         if (rcvQueue.isEmpty()) {
             return -1;
         }
@@ -463,6 +485,7 @@ public class Kcp {
     }
 
     public int peekSize() {
+		//System.out.println(rcvQueue.isEmpty());
         if (rcvQueue.isEmpty()) {
             return -1;
         }
@@ -504,6 +527,18 @@ public class Kcp {
 
         return true;
     }
+	
+	public void sendHandShake()
+	{
+		ByteBuf buf=Unpooled.buffer(20);
+		buf.writeInt(255);
+		buf.writeInt(0);
+		buf.writeInt(0);
+		buf.writeInt(1234567890);
+		buf.writeInt(-1);
+		output(buf,this);
+	}
+	
 
     public int send(ByteBuf buf) {
         assert mss > 0;
@@ -700,6 +735,7 @@ public class Kcp {
     }
 
     private void moveRcvData() {
+		//System.out.println("hasNext "+rcvBufItr.rewind().hasNext());
         for (Iterator<Segment> itr = rcvBufItr.rewind(); itr.hasNext(); ) {
             Segment seg = itr.next();
             if (seg.sn == rcvNxt && rcvQueue.size() < rcvWnd) {
@@ -720,13 +756,42 @@ public class Kcp {
         if (log.isDebugEnabled()) {
             log.debug("{} [RI] {} bytes", this, data.readableBytes());
         }
-
-        if (data == null || data.readableBytes() < IKCP_OVERHEAD) {
+		//System.out.println("readableBytes "+data.readableBytes());
+        if(data!=null&&data.readableBytes()==20){
+			
+			int type=data.readInt();
+			//System.out.println(type);
+			if(type==325){
+				conv=data.readInt();
+				token=data.readInt();
+				//System.err.println("fffff");
+				new Thread(new Runnable(){
+						@Override
+						public void run()
+						{
+							onTunnelActiveListener.onTunnelActive();
+						}
+				}).start();
+				
+				//System.out.println(this);
+				//System.out.println(conv);
+			}else if(type==404){
+				new Thread(new Runnable(){
+						@Override
+						public void run()
+						{
+							onTunnelActiveListener.onTunnelInActive();
+						}
+					}).start();
+			}
+			return 0;
+		}
+        else if (data == null || data.readableBytes() < IKCP_OVERHEAD) {
             return -1;
         }
 
         while (true) {
-            int conv, len, wnd, ts;
+            int conv, len, wnd, ts,token;
             long sn, una;
             byte cmd;
             short frg;
@@ -737,10 +802,10 @@ public class Kcp {
             }
 
             conv = data.readIntLE();
-            if (conv != this.conv && !(this.conv == 0 && autoSetConv)) {
-                return -4;
-            }
-
+//            if (conv != this.conv && !(this.conv == 0 && autoSetConv)) {
+//                return -4;
+//            }
+			token = data.readIntLE();
             cmd = data.readByte();
             frg = data.readUnsignedByte();
             wnd = data.readUnsignedShortLE();
@@ -757,9 +822,9 @@ public class Kcp {
                 return -3;
             }
 
-            if (this.conv == 0 && autoSetConv) { // automatically set conv
-                this.conv = conv;
-            }
+           // if (this.conv == 0 && autoSetConv) { // automatically set conv
+            this.conv = conv;
+          //  }
 
             this.rmtWnd = wnd;
             parseUna(una);
@@ -799,6 +864,7 @@ public class Kcp {
                                 seg = Segment.createSegment(byteBufAllocator, 0);
                             }
                             seg.conv = conv;
+							seg.token = token;
                             seg.cmd = cmd;
                             seg.frg = frg;
                             seg.wnd = wnd;
@@ -888,6 +954,8 @@ public class Kcp {
 
         Segment seg = Segment.createSegment(byteBufAllocator, 0);
         seg.conv = conv;
+		//System.out.println(this);
+		seg.token = token;
         seg.cmd = IKCP_CMD_ACK;
         seg.frg = 0;
         seg.wnd = wndUnused();
@@ -972,6 +1040,7 @@ public class Kcp {
             sndBuf.add(newSeg);
 
             newSeg.conv = conv;
+			newSeg.token = token;
             newSeg.cmd = IKCP_CMD_PUSH;
             newSeg.wnd = seg.wnd;
             newSeg.ts = current;

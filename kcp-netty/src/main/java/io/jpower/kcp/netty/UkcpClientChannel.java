@@ -400,7 +400,24 @@ public final class UkcpClientChannel extends AbstractChannel implements UkcpChan
             // Regardless if the connection attempt was cancelled, channelActive() event should be triggered,
             // because what happened is what happened.
             if (!wasActive && active) {
-                pipeline().fireChannelActive();
+				ukcp.setOnTunnelActiveListener(new OnTunnelActiveListener(){
+						@Override
+						public void onTunnelActive()
+						{
+							//System.err.println("gggg");
+							pipeline().fireChannelActive();
+						}
+						
+						@Override
+						public void onTunnelInActive()
+						{
+							//System.err.println("gggg");
+							pipeline().fireChannelInactive();
+						}
+				});
+				pipeline().fireChannelActive();
+				ukcp.sendHandShake();
+                
             }
 
             // If a user cancelled the connection attempt, close the channel, which is followed by channelInactive().
